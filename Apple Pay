@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apple Pay Payment Gateway</title>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            if (window.ApplePaySession && ApplePaySession.canMakePayments()) {
+                const applePayButton = document.createElement('button');
+                applePayButton.id = 'apple-pay-button';
+                applePayButton.innerText = 'Apple Pay';
+                applePayButton.style.padding = '10px';
+                applePayButton.style.fontSize = '18px';
+                applePayButton.onclick = onApplePayButtonClicked;
+                document.getElementById('container').appendChild(applePayButton);
+            }
+        });
+
+        function onApplePayButtonClicked() {
+            const paymentRequest = {
+                countryCode: 'US',
+                currencyCode: 'USD',
+                total: {
+                    label: 'Your Merchant Name',
+                    amount: '1.00'
+                },
+                supportedNetworks: ['visa', 'masterCard', 'amex', 'discover'],
+                merchantCapabilities: ['supports3DS', 'supportsCredit', 'supportsDebit']
+            };
+
+            const session = new ApplePaySession(3, paymentRequest);
+
+            session.onvalidatemerchant = event => {
+                const validationURL = event.validationURL;
+                fetch('/validate-merchant', {
+                    method: 'POST',
+                    body: JSON.stringify({ validationURL: validationURL }),
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => response.json())
+                .then(merchantSession => {
+                    session.completeMerchantValidation(merchantSession);
+                })
+                .catch(error => {
+                    console.error(error);
+                    session.abort();
+                });
+            };
+
+            session.onpaymentauthorized = event => {
+                const paymentData = event.payment.token.paymentData;
+                fetch('/process-payment', {
+                    method: 'POST',
+                    body: JSON.stringify({ paymentData: paymentData }),
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        session.completePayment(ApplePaySession.STATUS_SUCCESS);
+                    } else {
+                        session.completePayment(ApplePaySession.STATUS_FAILURE);
+                    }
+                })
+                .catch(error => {
+                    console.error(error);
+                    session.completePayment(ApplePaySession.STATUS_FAILURE);
+                });
+            };
+
+            session.begin();
+        }
+    </script>
+</head>
+<body>
+    <h1>Apple Pay Payment Gateway</h1>
+    <div id="container"></div>
+</body>
+</html>
